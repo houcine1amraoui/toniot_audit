@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+audit_out/
+data/
+*.csv
+!tests/**/*.csv
