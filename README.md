@@ -52,10 +52,36 @@ device, size, row count, and header.
 
 Main output: `AUDIT_REPORT.md` (plus `audit_full.json`, per-device CSVs and PNG plots).
 
+## Network-flow audit (`--part network`)
+
+The missing-data study runs on TON_IoT **network flows** (`Processed_Network_dataset`, 23 CSVs, ~22M Zeek flows,
+plus `train_test_network.csv`). The IoT telemetry audit showed that its labels follow attack time windows, while its
+sensor values carry almost no attack signal.
+
+```python
+!python scripts/run_audit.py --data-root "$DATA_ROOT" --out-dir "$OUT_DIR" --part network --net-max-files 2   # quick test
+!python scripts/run_audit.py --data-root "$DATA_ROOT" --out-dir "$OUT_DIR" --part network                     # full
+```
+
+One streaming pass (500k-row chunks, memory-safe) + probes on a uniform per-class sample (`--net-sample-per-class 20000`).
+Outputs in `OUT_DIR/network/{processed,train_test}/`:
+
+| File | Content |
+|---|---|
+| `NETWORK_REPORT.md`, `network_checks.csv` | checks N1–N11 (schema, labels, class sizes, signal, ID/time leakage, chronological generalisation, conflicts, group-loss sensitivity, multi-day classes, source-IP leakage) |
+| `class_time_windows.csv`, `class_by_day.csv/.png` | when each class occurs |
+| `column_missingness.csv`, `group_presence_pct_by_class.csv/.png` | Zeek `-` **structural** missingness by column, group and class |
+| `group_ablation.csv` | macro-F1 when conn / dns / ssl / http / weird groups are removed = preview of missing-data impact |
+| `feature_importance_behaviour.csv` | most used behavioural features |
+| `src_ip_purity.csv`, `dst_ip_purity.csv` | IP-based leakage |
+| `network_summary.json` | duplicates, probes, train_test overlap with processed |
+
+Feature groups: `id` (IPs, ports), `time` (ts), `conn` (proto, service, bytes, packets, state…), `dns_*`, `ssl_*`, `http_*`, `weird_*`.
+
 ## Test without the real data
 
 ```bash
-python tools/make_mock_toniot.py /tmp/mock_toniot
+python tools/make_mock_toniot.py /tmp/mock_toniot --network
 python scripts/run_audit.py --data-root /tmp/mock_toniot --out-dir /tmp/audit_out
 ```
 

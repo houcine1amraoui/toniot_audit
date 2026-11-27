@@ -73,3 +73,72 @@ def main(root):
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else "/tmp/mock_toniot")
+
+
+# ---------------------------------------------------------------- network ---
+NET_COLS = ("ts,src_ip,src_port,dst_ip,dst_port,proto,service,duration,src_bytes,dst_bytes,conn_state,"
+            "missed_bytes,src_pkts,src_ip_bytes,dst_pkts,dst_ip_bytes,dns_query,dns_qclass,dns_qtype,"
+            "dns_rcode,dns_AA,dns_RD,dns_RA,dns_rejected,ssl_version,ssl_cipher,ssl_resumed,"
+            "ssl_established,ssl_subject,ssl_issuer,http_trans_depth,http_method,http_uri,http_referrer,"
+            "http_version,http_request_body_len,http_response_body_len,http_status_code,http_user_agent,"
+            "http_orig_mime_types,http_resp_mime_types,weird_name,weird_addl,weird_notice,label,type").split(",")
+NET_TYPES = ["normal", "backdoor", "ddos", "dos", "injection", "password", "ransomware", "scanning", "xss", "mitm"]
+
+
+def net_rows(n, t0):
+    ty = rng.choice(NET_TYPES, n, p=[.5, .06, .08, .08, .06, .06, .04, .08, .03, .01])
+    att = ty != "normal"
+    d = {c: np.array(["-"] * n, dtype=object) for c in NET_COLS}
+    order = {t: i for i, t in enumerate(NET_TYPES)}
+    d["ts"] = (t0 + np.array([order[t] for t in ty]) * 3600 * 6 * att + rng.integers(0, 20000, n)).astype(str)
+    d["src_ip"] = np.where(att, "192.168.1." + pd.Series(ty).map(order).astype(str), "10.0.0." + rng.integers(1, 20, n).astype(str))
+    d["src_port"] = rng.integers(1024, 65000, n).astype(str)
+    d["dst_ip"] = "192.168.1." + rng.integers(1, 30, n).astype(str)
+    svc = np.where(ty == "scanning", "-", rng.choice(["dns", "http", "ssl", "-"], n))
+    d["dst_port"] = pd.Series(svc).map({"dns": "53", "http": "80", "ssl": "443", "-": "0"}).fillna("0").to_numpy()
+    d["proto"] = np.where(svc == "dns", "udp", "tcp")
+    d["service"] = svc
+    base = pd.Series(ty).map(order).to_numpy()
+    for c in ["duration", "src_bytes", "dst_bytes", "src_pkts", "dst_pkts", "src_ip_bytes", "dst_ip_bytes"]:
+        d[c] = np.round(rng.exponential(1 + base * 3, n), 3).astype(str)
+    d["missed_bytes"] = np.zeros(n, int).astype(str)
+    d["conn_state"] = np.where(ty == "scanning", "REJ", rng.choice(["SF", "S0", "OTH"], n))
+    dns = svc == "dns"
+    d["dns_query"] = np.where(dns, rng.choice(["a.com", "b.org", "evil.x"], n), "-")
+    for c in ["dns_qclass", "dns_qtype", "dns_rcode"]:
+        d[c] = np.where(dns, rng.integers(0, 3, n).astype(str), "0")
+    for c in ["dns_AA", "dns_RD", "dns_RA", "dns_rejected"]:
+        d[c] = np.where(dns, rng.choice(["T", "F"], n), "-")
+    ssl = svc == "ssl"
+    d["ssl_version"] = np.where(ssl, "TLSv12", "-")
+    d["ssl_cipher"] = np.where(ssl, rng.choice(["A", "B"], n), "-")
+    http = svc == "http"
+    d["http_method"] = np.where(http, np.where(ty == "xss", "POST", "GET"), "-")
+    d["http_uri"] = np.where(http, np.where(ty == "injection", "/q?id=1'", "/"), "-")
+    for c in ["http_trans_depth", "http_request_body_len", "http_response_body_len", "http_status_code"]:
+        d[c] = np.where(http, rng.integers(0, 500, n).astype(str), "0")
+    d["label"] = att.astype(int).astype(str)
+    d["type"] = ty
+    return pd.DataFrame(d)[NET_COLS]
+
+
+def make_network(root, n_files=3, rows=40000):
+    root = Path(root)
+    p = root / "Processed_datasets" / "Processed_Network_dataset"
+    p.mkdir(parents=True, exist_ok=True)
+    t0 = 1554000000
+    for i in range(1, n_files + 1):
+        df = net_rows(rows, t0 + i * 86400)
+        if i == 2:
+            df["extra_col"] = "x"  # mimic Network_dataset_6 extra column
+        df.to_csv(p / f"Network_dataset_{i}.csv", index=False, encoding="utf-8-sig")
+    tt = root / "Train_Test_datasets" / "Train_Test_Network_dataset"
+    tt.mkdir(parents=True, exist_ok=True)
+    src = pd.read_csv(p / "Network_dataset_1.csv", dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    src.drop(columns=["ts", "http_referrer"]).sample(5000, random_state=0).to_csv(
+        tt / "train_test_network.csv", index=False, encoding="utf-8-sig")
+    print("mock network written to", root)
+
+
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "--network":
+    make_network(sys.argv[1])

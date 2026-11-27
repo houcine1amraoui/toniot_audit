@@ -33,7 +33,7 @@ class LoadedTable:
 
 
 def norm_col(c: str) -> str:
-    return str(c).strip().lower().replace(" ", "_")
+    return str(c).replace("\ufeff", "").strip().lower().replace(" ", "_")
 
 
 def read_raw(path: Path) -> pd.DataFrame:

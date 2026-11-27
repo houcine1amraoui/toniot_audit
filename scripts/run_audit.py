@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from toniot_study import AuditConfig, run_audit, run_inventory  # noqa: E402
+from toniot_study.network_audit import run_network_audit  # noqa: E402
 
 
 def main():
@@ -19,6 +20,13 @@ def main():
     ap.add_argument("--data-root", default="/content/drive/MyDrive/TON_IoT")
     ap.add_argument("--out-dir", default="/content/drive/MyDrive/TON_IoT_audit")
     ap.add_argument("--inventory-only", action="store_true")
+    ap.add_argument("--part", choices=["all", "iot", "network"], default="all",
+                    help="which audit to run after the inventory (default: all)")
+    ap.add_argument("--net-sample-per-class", type=int, default=20_000,
+                    help="uniform sample size per class for network probes")
+    ap.add_argument("--net-max-files", type=int, default=0,
+                    help="only read the first N processed network files (0 = all; use 2 for a quick test)")
+    ap.add_argument("--net-chunksize", type=int, default=500_000)
     ap.add_argument("--no-train-test", action="store_true", help="skip Train_Test_* IoT files")
     ap.add_argument("--no-plots", action="store_true")
     ap.add_argument("--max-rows-probe", type=int, default=200_000)
@@ -32,8 +40,13 @@ def main():
                       count_rows_max_mb=a.count_rows_max_mb,
                       make_plots=not a.no_plots, audit_train_test=not a.no_train_test)
     inv = run_inventory(cfg)
-    if not a.inventory_only:
+    if a.inventory_only:
+        return
+    if a.part in ("all", "iot"):
         run_audit(cfg, inv)
+    if a.part in ("all", "network"):
+        run_network_audit(cfg, inv, sample_per_class=a.net_sample_per_class,
+                          chunksize=a.net_chunksize, max_files=a.net_max_files)
 
 
 if __name__ == "__main__":

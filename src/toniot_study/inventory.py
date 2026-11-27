@@ -27,28 +27,28 @@ def categorize(rel: Path) -> str:
         return "archive"
     if ext in (".pcap", ".pcapng") or "pcap" in p:
         return "raw_pcap"
-    if ext in (".pdf", ".docx", ".doc", ".txt", ".md", ".xlsx", ".xls"):
-        if "description" in p or "stat" in p:
-            return "description"
-        return "documentation"
     if "groundtruth" in p.replace("_", "") or "securityevents" in p.replace("_", ""):
         return "ground_truth"
-    if guess_device(name) is not None and ("iot" in p or ext == ".csv"):
+    if guess_device(name) is not None and ext in (".csv", ".xlsx", ".log", ".txt"):
         if "train_test" in p or "train-test" in p:
             return "iot_train_test"
-        if "raw" in p:
+        if "raw" in p or "original" in p:
             return "iot_raw"
         return "iot_processed"
     if "network" in p:
         if "train_test" in p:
             return "network_train_test"
-        if "raw" in p:
+        if "bro" in p.split("/")[1:2] or "_bro" in p or "zeek" in p:
+            return "network_raw_zeek"
+        if "raw" in p or "original" in p:
             return "network_raw"
         return "network_processed"
     if "linux" in p:
-        return "linux"
-    if "windows" in p or "win" in name:
+        return "linux_processed" if "processed" in p or "train_test" in p else "linux_raw_atop"
+    if "windows" in p or name.startswith("win"):
         return "windows"
+    if ext in (".pdf", ".docx", ".doc", ".md", ".xlsx", ".xls"):
+        return "description" if ("description" in p or "stat" in p) else "documentation"
     if "description" in p or "stat" in p:
         return "description"
     return "other"
@@ -71,7 +71,7 @@ def count_csv_rows(path: Path, chunk: int = 1 << 24) -> int:
 
 
 def read_header(path: Path) -> list[str]:
-    with open(path, "r", encoding="utf-8", errors="replace", newline="") as f:
+    with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
         try:
             return [c.strip() for c in next(csv.reader(f))]
         except StopIteration:
@@ -86,7 +86,10 @@ def build_inventory(cfg: AuditConfig) -> pd.DataFrame:
             "In Colab, mount Drive first and check the folder name in MyDrive."
         )
     rows = []
-    for dirpath, _, files in os.walk(root):
+    out_resolved = cfg.out_dir.resolve()
+    for dirpath, dirnames, files in os.walk(root):
+        # never inventory our own output folder if it sits inside the data root
+        dirnames[:] = [d for d in dirnames if (Path(dirpath) / d).resolve() != out_resolved]
         for fn in files:
             full = Path(dirpath) / fn
             rel = full.relative_to(root)

@@ -13,6 +13,16 @@ from .inventory import build_inventory, summarize_inventory
 from .loaders import load_table
 
 
+MISSING_IOT_MSG = (
+    "NO IoT TELEMETRY FILES FOUND under {root}.\n"
+    "The study needs TON_IoT's IoT sensor files (IoT_Fridge, IoT_Garage_Door, IoT_GPS_Tracker,\n"
+    "IoT_Modbus, IoT_Motion_Light, IoT_Thermostat, IoT_Weather). Download at least one of:\n"
+    "  Train_Test_datasets/Train_Test_IoT_dataset/   (small, balanced, ~7 CSVs)\n"
+    "  Processed_datasets/Processed_IoT_dataset/     (full telemetry, ~7-8 CSVs)\n"
+    "from https://research.unsw.edu.au/projects/toniot-datasets and put them under the data root."
+)
+
+
 def log(msg: str):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
@@ -78,6 +88,10 @@ def run_audit(cfg: AuditConfig, inv: pd.DataFrame | None = None) -> dict:
     if cfg.audit_train_test:
         groups.append(("train_test", "iot_train_test"))
     tables: dict[str, dict] = {}
+    if not inv.category.isin(["iot_processed", "iot_train_test"]).any():
+        msg = MISSING_IOT_MSG.format(root=cfg.data_root)
+        log(msg)
+        results["missing_iot"] = msg
     for gname, cat in groups:
         files = _pick_files(inv, cat)
         if not files:
@@ -176,6 +190,8 @@ def render_markdown(cfg, inv, res, overview, chk) -> str:
          R.md_table(inv[inv.category.str.startswith("iot")][
              ["category", "device", "rel_path", "size_mb", "n_rows", "columns"]]),
          ]
+    if res.get("missing_iot"):
+        L += ["> **STOP – " + res["missing_iot"].replace("\n", "  \n> ") + "**\n"]
     arch = inv[inv.category == "archive"]
     if len(arch):
         L += ["> **Archives present and not audited:** " + ", ".join(arch.rel_path) + "\n"]
